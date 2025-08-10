@@ -1,57 +1,71 @@
-from flask import Flask, request, jsonify
-import requests
-from utils import decode_base64_image
-from io import BytesIO
+# -*- coding: utf-8 -*-
 import os
+from io import BytesIO
+import requests
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from utils import decode_base64_image
 
-OCR_SPACE_API_KEY = os.getenv('OCR_SPACE_API_KEY', 'TU_API_OCR_SPACE')
+OCR_SPACE_API_KEY = os.getenv("OCR_SPACE_API_KEY", "")
 
 app = Flask(__name__)
+CORS(app, origins=os.getenv("ALLOWED_ORIGINS", "*").split(","))
 
-def translate_text(text, target="en"):
-    # Ejemplo: traduce usando Google Translate API REST o similar (puedes cambiar por DeepL)
-    # Aquí es solo un mock (retorna igual). Integra una API real si lo deseas.
-    return text
 
-@app.route('/ocr', methods=['POST'])
+@app.route("/healthz", methods=["GET"])
+def healthz():
+    return jsonify({"status": "ok"}), 200
+
+
+@app.route("/ocr", methods=["POST"])
 def ocr():
-    data = request.get_json()
-    img_b64 = data.get('image', '')
-    prompt = data.get('prompt', '')
+    """
+    Body: { "image": "data:image/png;base64,...", "prompt": "opcional" }
+    """
+    if not OCR_SPACE_API_KEY:
+        return jsonify({"error": "Falta OCR_SPACE_API_KEY en el entorno"}), 500
 
-    # Utiliza OCR.space
-    img = decode_base64_image(img_b64)
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-    files = {'file': ('image.png', buf, 'image/png')}
-    res = requests.post(
-        'https://api.ocr.space/parse/image',
-        files=files,
-        data={"apikey": OCR_API_KEY, "language": "spa", "OCREngine": 2},
-    )
-    if res.ok:
+    data = request.get_json(force=True, silent=True) or {}
+    img_b64 = data.get("image", "")
+    if not img_b64:
+        return jsonify({"error": "Debes enviar 'image' (base64)"}), 400
+
+    try:
+        img = decode_base64_image(img_b64)
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+
+        files = {"file": ("image.png", buf, "image/png")}
+        res = requests.post(
+            "https://api.ocr.space/parse/image",
+            files=files,
+            data={"apikey": OCR_SPACE_API_KEY, "language": "spa", "OCREngine": 2},
+            timeout=60
+        )
+        if not res.ok:
+            return jsonify({"error": "No se pudo leer la imagen."}), 400
+
         result = res.json()
-        parsed = result.get('ParsedResults', [{}])[0].get('ParsedText', '')
-        # Clasificación simple
+        parsed = result.get("ParsedResults", [{}])[0].get("ParsedText", "")
+
         doc_type = "texto simple"
-        if "Total" in parsed or "RUT" in parsed: doc_type = "documento/factura"
-        if "=" in parsed or "x" in parsed or "y" in parsed: doc_type = "expresión matemática"
-        # Detectar tablas (muy simple)
-        table_data = None
-        if "\t" in parsed or ("|" in parsed and "-" in parsed):
-            table_data = [row.split() for row in parsed.strip().split('\n') if row]
-        # Traducción automática
-        translation = translate_text(parsed, target="en")
-        response = {
+        if "Total" in parsed or "RUT" in parsed:
+            doc_type = "documento/factura"
+        if any(s in parsed for s in ["=", "x", "y"]):
+            doc_type = "expresión matemática"
+
+        translation = parsed[::-1]  # MOCK de traducción
+
+        return jsonify({
             "text": parsed.strip(),
             "type": doc_type,
-            "translation": translation,
-            "table": table_data
-        }
-        return jsonify(response)
-    else:
-        return jsonify({"text": "No se pudo leer el texto de la imagen."}), 400
+            "translation": translation
+        })
+    except Exception as e:
+        return jsonify({"error": f"Fallo OCR: {str(e)}"}), 500
+
 
 if __name__ == "__main__":
-    app.run(port=5001, debug=True)
+    port = int(os.getenv("PORT", "5001"))
+    app.run(host="0.0.0.0", port=port, debug=True)

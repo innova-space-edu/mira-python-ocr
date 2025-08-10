@@ -1,1 +1,13 @@
+flask
+matplotlib
+numpy
+pillow
+requests
+transformers
+torch
+pytesseract
+sympy
+pandas
+fpdf
+whisper
 

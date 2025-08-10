@@ -1,7 +1,8 @@
 # fly.toml (mira-python-ocr)
 from flask import Flask, request, jsonify
-app = "mira-python-ocr"   # <= cambia por el nombre que elijas en Fly
-primary_region = "iad"     # o la que te sugiera Fly
+
+app = "mira-python-ocr"
+primary_region = "scl"
 
 [build]
   dockerfile = "Dockerfile"
@@ -27,7 +28,7 @@ primary_region = "iad"     # o la que te sugiera Fly
   method = "get"
   path = "/healthz"
   protocol = "http"
-  tls_skip_verify = false
+
 
 @app.get("/healthz")
 def healthz():
